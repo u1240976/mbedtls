@@ -1526,6 +1526,13 @@
 #define MBEDTLS_BLOWFISH_C
 
 /**
+ * \def MBEDTLS_BLOWFISH_CTR_OMP
+ *
+ * Blowfish Counter Block Cipher mode (CTR) use OpenMP multithread implementation
+ */
+#define MBEDTLS_BLOWFISH_CTR_OMP
+
+/**
  * \def MBEDTLS_CAMELLIA_C
  *
  * Enable the Camellia block cipher.

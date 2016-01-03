@@ -388,6 +388,8 @@ int mbedtls_blowfish_crypt_cfb64( mbedtls_blowfish_context *ctx,
 #endif /*MBEDTLS_CIPHER_MODE_CFB */
 
 #if defined(MBEDTLS_CIPHER_MODE_CTR)
+
+#if !defined(MBEDTLS_BLOWFISH_CTR_OMP)
 /*
  * Blowfish CTR buffer encryption/decryption
  */
@@ -422,13 +424,11 @@ int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
 
     return( 0 );
 }
-#endif /* MBEDTLS_CIPHER_MODE_CTR */
-
-#if defined(MBEDTLS_CIPHER_MODE_CTR)
+#else
 /*
  * Blowfish CTR buffer encryption/decryption (OpenMP parallel version)
  */
-int mbedtls_blowfish_crypt_ctr_omp( mbedtls_blowfish_context *ctx,
+int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
                        size_t length,
                        size_t *nc_off,
                        unsigned char nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE],
@@ -503,6 +503,8 @@ int mbedtls_blowfish_crypt_ctr_omp( mbedtls_blowfish_context *ctx,
 
     return( 0 );
 }
+#endif
+
 #endif /* MBEDTLS_CIPHER_MODE_CTR */
 
 static const uint32_t S[4][256] = {
