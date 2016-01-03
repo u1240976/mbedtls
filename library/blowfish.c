@@ -39,6 +39,12 @@
 
 #if !defined(MBEDTLS_BLOWFISH_ALT)
 
+#if defined(MBEDTLS_BLOWFISH_CTR_OMP)
+
+#include "omp.h"
+
+#endif
+
 /* Implementation that should never be optimized out by the compiler */
 static void mbedtls_zeroize( void *v, size_t n ) {
     volatile unsigned char *p = v; while( n-- ) *p++ = 0;
@@ -455,29 +461,33 @@ int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
     *nc_off = n;
 
     /* CTR block cipher */
-    for( i = 0; i < length; i += MBEDTLS_BLOWFISH_BLOCKSIZE )
+    #pragma omp parallel num_threads(omp_get_max_threads())
     {
-        unsigned char local_nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE];
-        unsigned char local_stream_block[MBEDTLS_BLOWFISH_BLOCKSIZE];
-        int j;
+        #pragma omp for
+        for( i = 0; i < length; i += MBEDTLS_BLOWFISH_BLOCKSIZE )
+        {
+            unsigned char local_nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE];
+            unsigned char local_stream_block[MBEDTLS_BLOWFISH_BLOCKSIZE];
+            int j;
 
-        uint64_t local_nonce_counter_int = init_nonce_counter_int + (i / MBEDTLS_BLOWFISH_BLOCKSIZE);
-        PUT_UINT64_BE( local_nonce_counter_int, local_nonce_counter, 0 )
+            uint64_t local_nonce_counter_int = init_nonce_counter_int + (i / MBEDTLS_BLOWFISH_BLOCKSIZE);
+            PUT_UINT64_BE( local_nonce_counter_int, local_nonce_counter, 0 )
 
-        mbedtls_blowfish_crypt_ecb( ctx, MBEDTLS_BLOWFISH_ENCRYPT, local_nonce_counter, local_stream_block );
+            mbedtls_blowfish_crypt_ecb( ctx, MBEDTLS_BLOWFISH_ENCRYPT, local_nonce_counter, local_stream_block );
 
-        for( j = 0; j < 8 && i+j < length; j++ ){
-            size_t idx = i + j;
-            output[idx] = input[idx] ^ local_stream_block[j];
-        }
+            for( j = 0; j < 8 && i+j < length; j++ ){
+                size_t idx = i + j;
+                output[idx] = input[idx] ^ local_stream_block[j];
+            }
 
-        /* CTR block cipher last block, process return value nonce_counter/stream_block/nc_off */
-        if( i + MBEDTLS_BLOWFISH_BLOCKSIZE >= length ){
-            local_nonce_counter_int++;
-            PUT_UINT64_BE( local_nonce_counter_int, nonce_counter, 0 )
+            /* CTR block cipher last block, process return value nonce_counter/stream_block/nc_off */
+            if( i + MBEDTLS_BLOWFISH_BLOCKSIZE >= length ){
+                local_nonce_counter_int++;
+                PUT_UINT64_BE( local_nonce_counter_int, nonce_counter, 0 )
 
-            memcpy( stream_block, local_stream_block, MBEDTLS_BLOWFISH_BLOCKSIZE );
-            *nc_off = j % MBEDTLS_BLOWFISH_BLOCKSIZE;
+                memcpy( stream_block, local_stream_block, MBEDTLS_BLOWFISH_BLOCKSIZE );
+                *nc_off = j % MBEDTLS_BLOWFISH_BLOCKSIZE;
+            }
         }
     }
     
