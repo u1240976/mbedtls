@@ -1530,6 +1530,7 @@
  *
  * Blowfish Counter Block Cipher mode (CTR) use OpenMP multithread implementation
  */
+#define MBEDTLS_BLOWFISH_CTR2
 #define MBEDTLS_BLOWFISH_CTR_OMP
 
 /**

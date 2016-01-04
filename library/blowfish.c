@@ -394,8 +394,6 @@ int mbedtls_blowfish_crypt_cfb64( mbedtls_blowfish_context *ctx,
 #endif /*MBEDTLS_CIPHER_MODE_CFB */
 
 #if defined(MBEDTLS_CIPHER_MODE_CTR)
-
-#if !defined(MBEDTLS_BLOWFISH_CTR_OMP)
 /*
  * Blowfish CTR buffer encryption/decryption
  */
@@ -430,11 +428,71 @@ int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
 
     return( 0 );
 }
-#else
+#endif /* MBEDTLS_CIPHER_MODE_CTR */
+
+#if defined(MBEDTLS_CIPHER_MODE_CTR) && defined(MBEDTLS_BLOWFISH_CTR2)
 /*
  * Blowfish CTR buffer encryption/decryption (OpenMP parallel version)
  */
-int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
+int mbedtls_blowfish_crypt_ctr2( mbedtls_blowfish_context *ctx,
+                       size_t length,
+                       size_t *nc_off,
+                       unsigned char nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE],
+                       unsigned char stream_block[MBEDTLS_BLOWFISH_BLOCKSIZE],
+                       const unsigned char *input,
+                       unsigned char *output )
+{
+    int c;
+    size_t n = *nc_off;
+    size_t i;
+
+    uint64_t init_nonce_counter_int;
+    GET_UINT64_BE( init_nonce_counter_int, nonce_counter, 0 )
+
+    /* offset % MBEDTLS_BLOWFISH_BLOCKSIZE != 0 at start */
+    n %= MBEDTLS_BLOWFISH_BLOCKSIZE;
+    while( n != 0 && length > 0 ){
+        c = *input++;
+        *output++ = (unsigned char)( c ^ stream_block[n] );
+
+        n = ( n + 1 ) % MBEDTLS_BLOWFISH_BLOCKSIZE;
+        length--;
+    }
+    *nc_off = n;
+
+    /* CTR block cipher */
+    for( i = 0; i < length; i += MBEDTLS_BLOWFISH_BLOCKSIZE )
+    {
+        unsigned char local_nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE];
+        unsigned char local_stream_block[MBEDTLS_BLOWFISH_BLOCKSIZE];
+        int j;
+
+        uint64_t local_nonce_counter_int = init_nonce_counter_int + (i / MBEDTLS_BLOWFISH_BLOCKSIZE);
+        PUT_UINT64_BE( local_nonce_counter_int, local_nonce_counter, 0 )
+
+        mbedtls_blowfish_crypt_ecb( ctx, MBEDTLS_BLOWFISH_ENCRYPT, local_nonce_counter, local_stream_block );
+
+        for( j = 0; j < 8 && i+j < length; j++ ){
+            size_t idx = i + j;
+            output[idx] = input[idx] ^ local_stream_block[j];
+        }
+
+        /* CTR block cipher last block, process return value nonce_counter/stream_block/nc_off */
+        if( i + MBEDTLS_BLOWFISH_BLOCKSIZE >= length ){
+            local_nonce_counter_int++;
+            PUT_UINT64_BE( local_nonce_counter_int, nonce_counter, 0 )
+
+            memcpy( stream_block, local_stream_block, MBEDTLS_BLOWFISH_BLOCKSIZE );
+            *nc_off = j % MBEDTLS_BLOWFISH_BLOCKSIZE;
+        }
+    }
+    
+    return( 0 );
+}
+/*
+ * Blowfish CTR buffer encryption/decryption (OpenMP parallel version)
+ */
+int mbedtls_blowfish_crypt_ctr_omp( mbedtls_blowfish_context *ctx,
                        size_t length,
                        size_t *nc_off,
                        unsigned char nonce_counter[MBEDTLS_BLOWFISH_BLOCKSIZE],
@@ -491,31 +549,9 @@ int mbedtls_blowfish_crypt_ctr( mbedtls_blowfish_context *ctx,
         }
     }
     
-    /*
-    while( length-- )
-    {
-        if( n == 0 ) {
-            mbedtls_blowfish_crypt_ecb( ctx, MBEDTLS_BLOWFISH_ENCRYPT, nonce_counter,
-                                stream_block );
-
-            for( i = MBEDTLS_BLOWFISH_BLOCKSIZE; i > 0; i-- )
-                if( ++nonce_counter[i - 1] != 0 )
-                    break;
-        }
-        c = *input++;
-        *output++ = (unsigned char)( c ^ stream_block[n] );
-
-        n = ( n + 1 ) % MBEDTLS_BLOWFISH_BLOCKSIZE;
-    }
-    *nc_off = n;
-    */
-
-
     return( 0 );
 }
-#endif
-
-#endif /* MBEDTLS_CIPHER_MODE_CTR */
+#endif /* MBEDTLS_BLOWFISH_CTR_OMP */
 
 static const uint32_t S[4][256] = {
     {   0xD1310BA6L, 0x98DFB5ACL, 0x2FFD72DBL, 0xD01ADFB7L,
